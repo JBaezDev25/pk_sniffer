@@ -1,0 +1,49 @@
+# Compiled binaries
+packet_sniffer
+*.o
+*.out
+*.exe
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Object files
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Core dumps
+core
+core.*
+
+# Editor files
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+
+# Build directories
+build/
+bin/
+obj/
