@@ -5,12 +5,17 @@
  * License: MIT
  */
 
+/* Enable BSD types and TCP/UDP header structures */
+#define _DEFAULT_SOURCE
+#define __FAVOR_BSD
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
+#include <stdint.h>
 #include <pcap.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -74,11 +79,11 @@ int suspicious_ports[] = {
 };
 
 /* Function prototypes */
-void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
-void process_ip_packet(const u_char *packet, int size);
-void process_tcp_packet(const u_char *packet, int size, struct iphdr *iph);
-void process_udp_packet(const u_char *packet, int size, struct iphdr *iph);
-void process_icmp_packet(const u_char *packet, int size, struct iphdr *iph);
+void packet_handler(unsigned char *args, const struct pcap_pkthdr *header, const unsigned char *packet);
+void process_ip_packet(const unsigned char *packet, int size);
+void process_tcp_packet(const unsigned char *packet, int size, struct iphdr *iph);
+void process_udp_packet(const unsigned char *packet, int size, struct iphdr *iph);
+void process_icmp_packet(const unsigned char *packet, int size, struct iphdr *iph);
 void detect_threats(struct iphdr *iph, int src_port, int dest_port, int protocol);
 int is_suspicious_port(int port);
 void check_port_scan(char *src_ip, int dest_port);
@@ -90,8 +95,7 @@ void print_banner();
 int main(int argc, char *argv[]) {
     char errbuf[PCAP_ERRBUF_SIZE];
     char *dev;
-    struct bpf_program fp;
-    bpf_u_int32 net, mask;
+    uint32_t net, mask;
 
     print_banner();
 
@@ -110,11 +114,17 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         dev = argv[1];
     } else {
-        dev = pcap_lookupdev(errbuf);
-        if (dev == NULL) {
-            fprintf(stderr, COLOR_RED "[ERROR] Couldn't find default device: %s\n" COLOR_RESET, errbuf);
+        pcap_if_t *alldevs;
+        if (pcap_findalldevs(&alldevs, errbuf) == -1) {
+            fprintf(stderr, COLOR_RED "[ERROR] Couldn't find devices: %s\n" COLOR_RESET, errbuf);
             return 2;
         }
+        if (alldevs == NULL) {
+            fprintf(stderr, COLOR_RED "[ERROR] No network devices found\n" COLOR_RESET);
+            return 2;
+        }
+        dev = alldevs->name;
+        printf(COLOR_GREEN "[INFO] Using default device: %s\n" COLOR_RESET, dev);
     }
 
     printf(COLOR_GREEN "[INFO] Monitoring device: %s\n" COLOR_RESET, dev);
@@ -145,7 +155,7 @@ int main(int argc, char *argv[]) {
     printf(COLOR_CYAN "[INFO] Monitoring for potential threats...\n\n" COLOR_RESET);
 
     /* Start packet capture loop */
-    pcap_loop(handle, 0, packet_handler, NULL);
+    pcap_loop(handle, 0, (pcap_handler)packet_handler, NULL);
 
     /* Cleanup */
     pcap_close(handle);
@@ -154,7 +164,9 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
+void packet_handler(unsigned char *args, const struct pcap_pkthdr *header, const unsigned char *packet) {
+    (void)args;  /* Unused parameter */
+
     stats.total_packets++;
 
     /* Process IP packet */
@@ -168,7 +180,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     }
 }
 
-void process_ip_packet(const u_char *packet, int size) {
+void process_ip_packet(const unsigned char *packet, int size) {
     struct iphdr *iph = (struct iphdr *)(packet + sizeof(struct ethhdr));
 
     /* Check for oversized packets */
@@ -201,12 +213,14 @@ void process_ip_packet(const u_char *packet, int size) {
     }
 }
 
-void process_tcp_packet(const u_char *packet, int size, struct iphdr *iph) {
+void process_tcp_packet(const unsigned char *packet, int size, struct iphdr *iph) {
+    (void)size;  /* Unused parameter */
+
     unsigned short iphdrlen = iph->ihl * 4;
     struct tcphdr *tcph = (struct tcphdr *)(packet + iphdrlen + sizeof(struct ethhdr));
 
-    int src_port = ntohs(tcph->source);
-    int dest_port = ntohs(tcph->dest);
+    int src_port = ntohs(tcph->th_sport);
+    int dest_port = ntohs(tcph->th_dport);
 
     struct sockaddr_in source, dest;
     memset(&source, 0, sizeof(source));
@@ -215,14 +229,14 @@ void process_tcp_packet(const u_char *packet, int size, struct iphdr *iph) {
     dest.sin_addr.s_addr = iph->daddr;
 
     /* Detect SYN scan (SYN flag set, ACK flag not set) */
-    if (tcph->syn && !tcph->ack) {
+    if (tcph->th_flags & TH_SYN && !(tcph->th_flags & TH_ACK)) {
         char src_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &source.sin_addr, src_ip, INET_ADDRSTRLEN);
         check_port_scan(src_ip, dest_port);
     }
 
     /* Check for NULL scan (all flags off) */
-    if (!tcph->syn && !tcph->ack && !tcph->fin && !tcph->rst && !tcph->psh && !tcph->urg) {
+    if (tcph->th_flags == 0) {
         char details[256];
         snprintf(details, sizeof(details), "NULL scan detected from %s",
                  inet_ntoa(source.sin_addr));
@@ -230,7 +244,7 @@ void process_tcp_packet(const u_char *packet, int size, struct iphdr *iph) {
     }
 
     /* Check for XMAS scan (FIN, PSH, URG flags set) */
-    if (tcph->fin && tcph->psh && tcph->urg) {
+    if ((tcph->th_flags & (TH_FIN | TH_PUSH | TH_URG)) == (TH_FIN | TH_PUSH | TH_URG)) {
         char details[256];
         snprintf(details, sizeof(details), "XMAS scan detected from %s",
                  inet_ntoa(source.sin_addr));
@@ -241,20 +255,22 @@ void process_tcp_packet(const u_char *packet, int size, struct iphdr *iph) {
     detect_threats(iph, src_port, dest_port, IPPROTO_TCP);
 }
 
-void process_udp_packet(const u_char *packet, int size, struct iphdr *iph) {
+void process_udp_packet(const unsigned char *packet, int size, struct iphdr *iph) {
+    (void)size;  /* Unused parameter */
+
     unsigned short iphdrlen = iph->ihl * 4;
     struct udphdr *udph = (struct udphdr *)(packet + iphdrlen + sizeof(struct ethhdr));
 
-    int src_port = ntohs(udph->source);
-    int dest_port = ntohs(udph->dest);
+    int src_port = ntohs(udph->uh_sport);
+    int dest_port = ntohs(udph->uh_dport);
 
     /* Check for threats */
     detect_threats(iph, src_port, dest_port, IPPROTO_UDP);
 }
 
-void process_icmp_packet(const u_char *packet, int size, struct iphdr *iph) {
-    unsigned short iphdrlen = iph->ihl * 4;
-    struct icmphdr *icmph = (struct icmphdr *)(packet + iphdrlen + sizeof(struct ethhdr));
+void process_icmp_packet(const unsigned char *packet, int size, struct iphdr *iph) {
+    (void)packet;  /* Unused parameter */
+    (void)size;    /* Unused parameter */
 
     struct sockaddr_in source;
     memset(&source, 0, sizeof(source));
@@ -321,6 +337,8 @@ int is_suspicious_port(int port) {
 }
 
 void check_port_scan(char *src_ip, int dest_port) {
+    (void)dest_port;  /* Unused parameter - could be used for per-port tracking */
+
     time_t now = time(NULL);
     int found = 0;
 
