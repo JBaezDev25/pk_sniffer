@@ -77,7 +77,7 @@ sudo ./packet_sniffer eth0
 
 [STATS] Packets: 100 | Threats: 0 | TCP: 85 | UDP: 10 | ICMP: 5
 [THREAT ALERT] [2026-01-20 15:23:45] SUSPICIOUS_PORT: TCP traffic to port 3389
-[THREAT ALERT] [2026-01-20 15:24:12] PORT_SCAN: Port scan from 192.168.1.100
+[THREAT ALERT] [2026-01-20 15:24:12] PORT_SCAN: Port scan from 203.0.113.100
 
 === Packet Capture Statistics ===
 Total Packets:   547

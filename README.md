@@ -123,8 +123,8 @@ Press `Ctrl+C` to stop packet capture and display statistics.
 [INFO] Packet capture started. Press Ctrl+C to stop.
 [INFO] Monitoring for potential threats...
 
-[THREAT ALERT] [2026-01-20 14:23:45] PORT_SCAN: Port scan detected from 192.168.1.100 (15 ports in 8 seconds)
-[THREAT ALERT] [2026-01-20 14:23:47] SUSPICIOUS_PORT: TCP traffic to suspicious port 3389 from 192.168.1.50 to 192.168.1.10
+[THREAT ALERT] [2026-01-20 14:23:45] PORT_SCAN: Port scan detected from 203.0.113.100 (15 ports in 8 seconds)
+[THREAT ALERT] [2026-01-20 14:23:47] SUSPICIOUS_PORT: TCP traffic to suspicious port 3389 from 192.0.2.50 to 192.0.2.10
 [STATS] Packets: 100 | Threats: 2 | TCP: 85 | UDP: 10 | ICMP: 5
 
 === Packet Capture Statistics ===
